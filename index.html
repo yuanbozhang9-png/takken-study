@@ -2,7 +2,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; frame-src https://www.retio.or.jp; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
-<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css"><script type="module" src="./app.js"></script>
+<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=study-timer"><script type="module" src="./app.js?v=study-timer"></script>
 </head><body><main>
 <section><h2>宅建試験まで</h2><div id="clock" class="digits" role="timer">--- : -- : -- : --</div><div class="small" id="examLabel"></div></section>
 <section><h2>30歳までの時間</h2><div class="statline"><span id="pastStat"></span><span id="futureStat"></span></div><div id="life" class="life"></div><p id="lifeLock" class="life-lock">登录后读取私人出生日期，显示30行人生时间轴。出生日期不写入公开源码。</p><div class="legend"><span><i class="sw color-0"></i>过去</span><span><i class="sw color-1"></i>今天</span><span><i class="sw color-2"></i>未来</span></div></section>
@@ -11,6 +11,22 @@
 <div id="authMessage" class="note" role="status" aria-live="polite"></div><button id="retryCloud" class="btn secondary" hidden>重新连接</button>
 <details id="profilePanel" hidden><summary>时间设置（仅当前账号可见）</summary><form id="profileForm" class="summary-form"><label class="small-label" for="birthday">出生日期</label><input id="birthday" type="date" required min="1900-01-01" max="2200-12-31"><label class="small-label" for="examAt">暂定考试时间（日本时间，官方公布后可改）</label><input id="examAt" type="datetime-local" required><button id="saveProfile" class="btn secondary" type="submit">保存到私人设置</button><div id="profileMessage" class="note" role="status"></div></form></details></section>
 <div id="studyArea" hidden>
+<section aria-labelledby="studyTimerHeading">
+  <h2 id="studyTimerHeading">学习计时</h2>
+  <div class="study-timer-line">
+    <div>
+      <div class="small" id="studyTimerLabel">累计学习时长</div>
+      <div class="digits" id="studyElapsed" role="timer" aria-labelledby="studyTimerLabel">—</div>
+    </div>
+    <div class="study-timer-actions">
+      <button class="btn primary" id="startStudy" type="button" disabled>开始学习</button>
+      <button class="btn secondary" id="stopStudy" type="button" disabled>停止学习</button>
+    </div>
+  </div>
+  <p class="small study-timer-totals"><span>本月 <strong id="studyMonth">—</strong></span><span>本周 <strong id="studyWeek">—</strong></span></p>
+  <div id="studyCurrent" class="small" hidden></div>
+  <div id="studyTimerStatus" class="note" role="status"></div>
+</section>
 <section><h2>今日の一問 · 每日练习</h2><div class="toolbar"><label>年份 <select id="yearFilter"><option value="all">已核验年份</option value="2024">2024</option><option value="2025">2025</option><option value="2026" disabled>2026 · 待官方标准答案</option></select></label><label>分类 <select id="categoryFilter"><option value="all">全部</option><option>権利関係</option><option>宅建業法</option><option>法令上の制限</option><option>税・その他</option></select></label></div>
 <p class="small" id="bankStatus">加载已核验题目索引…</p><p id="questionMeta" class="small"></p><div class="question" id="question"></div><div class="source-note">本版采用官方原题链接模式：打开原题，阅读对应题号的日语题干及选项，再在下方选择 1～4。未公开转载整套原文。PDF 末尾含标准答案。题目按原考试年度规则评分，尚未全部复核至2027年法律。</div><a id="sourceLink" target="_blank" rel="noopener noreferrer" hidden>打开官方原题 PDF</a><details id="pdfPanel"><summary>尝试在页面内查看官方 PDF（手机建议用上方链接）</summary><iframe id="sourceFrame" class="source-frame" title="官方试题 PDF" loading="lazy"></iframe></details>
 <div id="answers" class="answers answer-grid" role="group" aria-label="选择官方试题中的选项"></div><div class="actions"><button class="btn primary" id="submit" disabled>提交并打卡</button><button class="btn secondary" id="next" hidden>下一题</button></div><div id="feedback" class="note" role="status" aria-live="polite"></div><div id="explanation"></div></section>

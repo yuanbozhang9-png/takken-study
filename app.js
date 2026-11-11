@@ -1,8 +1,9 @@
 import {CONFIG} from './config.js';
-import {DEFAULT_EXAM,jpDate,toDay,dateFromDay,lifeModel,countdown,calendarCells,heatLevel,statistics,validateBackup,randomQuestion,UUID,newId} from './core.js';
+import {DEFAULT_EXAM,jpDate,toDay,dateFromDay,lifeModel,countdown,calendarCells,heatLevel,statistics,validateBackup,validateStudySessions,formatStudyDuration,studyPeriodStarts,randomQuestion,UUID,newId} from './core.js?v=study-timer';
 const $=id=>document.getElementById(id);
 let cloud=null,user=null,profile=null,questions=[],records=[],current=null,selected=null,done=false,busy=false,authBusy=false,pending=null,authEpoch=0,refreshTask=null,restoreBusy=false;
 let rememberedDay=jpDate(),lastRefresh=0;
+let timerState = null, timerTask = null, timerReady = false, timerChanging = false;
 const PENDING_KEY='takken-pending-v2';
 const questionColumns='id,exam_year,question_number,category,correct_options,source_url,source_page,explanation';
 const answerColumns='id,user_id,studied_on,question_id,selected_option,is_correct,created_at,entry_kind';
@@ -19,6 +20,122 @@ function showClock(){
   $('clock').textContent=`${parts[0]}天 ${String(parts[1]).padStart(2,'0')}时 ${String(parts[2]).padStart(2,'0')}分 ${String(parts[3]).padStart(2,'0')}秒`;
   const local=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',dateStyle:'long',timeStyle:'short'}).format(new Date(target));
   $('examLabel').textContent=local+'（日本时间；个人暂定日期，非官方确认日期）';
+}
+function renderStudyTimer() {
+  if (!timerState) {
+    for (const id of ['studyElapsed', 'studyMonth', 'studyWeek']) $(id).textContent = '—';
+    $('studyCurrent').hidden = true;
+    $('studyCurrent').textContent = '';
+    return;
+  }
+  const {active, serverNow, receivedAt, periodStarts, totalMs, monthMs, weekMs} = timerState;
+  const now = serverNow + Math.max(0, performance.now() - receivedAt);
+  const periods = studyPeriodStarts(now);
+  const runningSince = start => active ? Math.max(0, now - Math.max(active.startedAt, start)) : 0;
+  $('studyElapsed').textContent = formatStudyDuration(totalMs + runningSince(0));
+  $('studyMonth').textContent = formatStudyDuration(
+    (periods.month === periodStarts.month ? monthMs : 0) + runningSince(periods.month)
+  );
+  $('studyWeek').textContent = formatStudyDuration(
+    (periods.week === periodStarts.week ? weekMs : 0) + runningSince(periods.week)
+  );
+  $('studyCurrent').hidden = !active;
+  $('studyCurrent').textContent = active ? '计时中 · 本次 ' + formatStudyDuration(runningSince(0)) : '';
+}
+
+function updateTimerButtons() {
+  const locked = timerChanging || restoreBusy;
+  $('startStudy').textContent = !timerReady && !timerTask ? '重新读取计时' : '开始学习';
+  $('startStudy').disabled = locked || (!timerReady && !!timerTask) || (timerReady && !!timerState?.active);
+  $('stopStudy').disabled = locked || !timerReady || !timerState?.active;
+}
+
+function acceptTimerState(data) {
+  const serverNow = Date.parse(data?.server_now);
+  const startedAt = data?.active ? Date.parse(data.active.started_at) : null;
+  const totals = [data?.total_ms, data?.month_ms, data?.week_ms];
+  if (!Number.isFinite(serverNow) || totals.some(n => !Number.isSafeInteger(n) || n < 0)
+    || (data?.active && (!UUID.test(data.active.id) || !Number.isFinite(startedAt)))) {
+    throw new Error('未收到有效的云端计时状态');
+  }
+  timerState = {
+    active: data.active ? {id: data.active.id, startedAt} : null,
+    serverNow,
+    receivedAt: performance.now(),
+    periodStarts: studyPeriodStarts(serverNow),
+    totalMs: data.total_ms,
+    monthMs: data.month_ms,
+    weekMs: data.week_ms
+  };
+  timerReady = true;
+  renderStudyTimer();
+}
+
+async function refreshStudyTimer() {
+  if (!user || $('studyArea').hidden || timerChanging || restoreBusy) return false;
+  if (timerTask) return timerTask;
+  const epoch = authEpoch;
+  const task = (async () => {
+    try {
+      const {data, error} = await cloud.rpc('get_study_timer');
+      if (error) throw error;
+      if (epoch !== authEpoch) return false;
+      acceptTimerState(data);
+      message('studyTimerStatus', '');
+      return true;
+    } catch (e) {
+      if (epoch === authEpoch) {
+        timerReady = false;
+        message('studyTimerStatus', '读取计时失败：' + errorText(e), true);
+      }
+      return false;
+    }
+  })();
+  timerTask = task;
+  updateTimerButtons();
+  try {
+    return await task;
+  } finally {
+    if (timerTask === task) {
+      timerTask = null;
+      updateTimerButtons();
+    }
+  }
+}
+
+async function changeStudyTimer(action) {
+  if (!user || $('studyArea').hidden || timerChanging || restoreBusy) return;
+  if (!timerReady) {
+    if (action === 'start') await refreshStudyTimer();
+    return;
+  }
+  const activeId = timerState.active?.id;
+  if ((action === 'stop') !== !!activeId) return;
+  const epoch = authEpoch;
+  timerChanging = true;
+  updateTimerButtons();
+  try {
+    // Wait for any existing read, and never stop a different session from the one shown.
+    if (timerTask) await timerTask;
+    if (epoch !== authEpoch || !timerReady || timerState.active?.id !== activeId) return;
+    const id = activeId || newId();
+    message('studyTimerStatus', action === 'start' ? '正在开始计时…' : '正在保存学习时长…');
+    const {data, error} = await cloud.rpc('change_study_timer', {p_action: action, p_id: id});
+    if (error) throw error;
+    if (epoch !== authEpoch) return;
+    acceptTimerState(data);
+    message('studyTimerStatus', action === 'stop' ? '学习时长已保存。' : '');
+  } catch (e) {
+    if (epoch === authEpoch) {
+      timerReady = false;
+      message('studyTimerStatus', '计时状态未确认：' + errorText(e) + '。请重新读取计时。', true);
+    }
+  } finally {
+    if (epoch === authEpoch) {
+      timerChanging = false;
+      updateTimerButtons();
+    }
+  }
 }
 function renderLife(){
   $('life').replaceChildren();$('pastStat').textContent='';$('futureStat').textContent='';
@@ -92,10 +209,11 @@ function renderExplanation(q,row){
   const source=document.createElement('a');source.target='_blank';source.rel='noopener noreferrer';source.textContent='核对官方标准答案（PDF末页）';source.href=q.source_url;root.append(source);
   message('feedback',`${row.is_correct?'回答正确':'回答错误'} · 官方正确选项 ${q.correct_options.map(n=>n+1).join('、')}\n打卡已同步到云端 · ${row.studied_on}（日本日期）`);
 }
-async function getAllAnswers(epoch){
+async function getAllRows(table, columns, epoch){
   const rows=[];let after=null;
   for(let page=0;page<1000;page++){
-    let query=cloud.from('study_answers').select(answerColumns).eq('user_id',user.id).order('id',{ascending:true}).limit(500);
+    let query=cloud.from(table).select(columns).eq('user_id',user.id).order('id',{ascending:true}).limit(500);
+    if(table==='study_sessions')query=query.not('ended_at','is',null);
     if(after)query=query.gt('id',after);
     const {data,error}=await query;if(error)throw error;if(epoch!==authEpoch)throw Error('账号已切换');
     rows.push(...(data||[]));if(!data||data.length<500)return rows;after=data[data.length-1].id;
@@ -105,7 +223,7 @@ async function getAllAnswers(epoch){
 async function refreshRecords(){
   if(!cloud||!user)return false;if(refreshTask)return refreshTask;
   const epoch=authEpoch;
-  const task=(async()=>{try{const data=await getAllAnswers(epoch);if(epoch!==authEpoch)return false;records=data;lastRefresh=Date.now();renderHeat();$('syncStatus').textContent='完整云端记录已同步 · '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',timeStyle:'medium'}).format(new Date())+'（日本时间）';return true;}catch(e){if(epoch===authEpoch)$('syncStatus').textContent='读取失败：'+errorText(e)+'。暂保留上次已确认记录。';return false;}finally{if(refreshTask===task)refreshTask=null;}})();refreshTask=task;return task;
+  const task=(async()=>{try{const data=await getAllRows('study_answers',answerColumns,epoch);if(epoch!==authEpoch)return false;records=data;lastRefresh=Date.now();renderHeat();$('syncStatus').textContent='完整云端记录已同步 · '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',timeStyle:'medium'}).format(new Date())+'（日本时间）';return true;}catch(e){if(epoch===authEpoch)$('syncStatus').textContent='读取失败：'+errorText(e)+'。暂保留上次已确认记录。';return false;}finally{if(refreshTask===task)refreshTask=null;}})();refreshTask=task;return task;
 }
 async function submitAnswer(){
   if(selected===null||done||busy||restoreBusy||!cloud||!user||!current)return;
@@ -133,6 +251,8 @@ async function applySession(session){
   const next=session?.user||null;
   if(user?.id===next?.id && user!==null)return;
   const epoch=++authEpoch;user=next;profile=null;records=[];questions=[];current=null;selected=null;done=false;busy=false;pending=null;refreshTask=null;
+  timerState=null;timerTask=null;timerReady=false;timerChanging=false;
+  renderStudyTimer();message('studyTimerStatus','');updateTimerButtons();
   $('password').value='';$('birthday').value='';$('examAt').value='';$('sourceFrame').removeAttribute('src');$('studyArea').hidden=true;$('profilePanel').hidden=true;$('logout').hidden=!user;$('authForm').hidden=!!user;$('authStatus').textContent=user?'已登录，检查本人访问权限…':'未登录 · 请使用本人的邮箱登录';
   $('explanation').replaceChildren();message('feedback','');message('authMessage','');renderLife();showClock();renderHeat();
   if(!user)return;
@@ -143,11 +263,12 @@ async function applySession(session){
     const {data,error}=await cloud.from('study_questions').select(questionColumns).order('id',{ascending:true}).limit(200);if(error)throw error;if(epoch!==authEpoch)return;
     questions=(data||[]).filter(q=>q.id&&q.exam_year>=2024&&q.exam_year<=2026&&q.correct_options?.length&&/^https:\/\/www\.retio\.or\.jp\//.test(q.source_url));
     $('authStatus').textContent='已登录：'+user.email;$('studyArea').hidden=false;$('profilePanel').hidden=false;
+    const timerLoad = refreshStudyTimer();
     const full=questions.filter(q=>q.explanation).length;$('bankStatus').textContent=`已核验官方答案 ${questions.length} 道 · 中文解析 ${full} 道 · 2026年待官方答案；无演示题。`;
     pending=loadPending();const pendingQ=questions.find(q=>q.id===pending?.question_id);
     if(pending&&!pendingQ){message('authMessage','本浏览器有未确认提交，但该题目不在已核验题库。请先核查旧记录，暂不继续答题。',true);$('submit').disabled=true;showQuestion(null);return;}
     if(pendingQ)showQuestion(pendingQ,pending.selected_option);else pickQuestion();
-    await refreshRecords();resizeHeat();
+    await Promise.all([refreshRecords(),timerLoad]);resizeHeat();
   }catch(e){if(epoch===authEpoch)message('authMessage','初始化失败：'+errorText(e)+'。私人学习区域未开放。',true);}
 }
 async function timeoutFetch(input,init={}){
@@ -178,7 +299,7 @@ $('signup').onclick=async()=>{
   authBusy=true;$('signup').disabled=true;
   try{const {error}=await cloud.auth.signUp({email:$('email').value.trim(),password:$('password').value,options:{emailRedirectTo:location.origin+location.pathname}});if(error)throw error;message('authMessage','注册已提交。完成邮箱验证后，由管理员绑定此唯一账号并关闭公开注册。');}catch(e){message('authMessage','注册失败：'+errorText(e),true);}finally{authBusy=false;$('signup').disabled=false;$('password').value='';}
 };
-$('logout').onclick=async()=>{if(!cloud||busy||restoreBusy)return;try{const {error}=await cloud.auth.signOut({scope:'local'});if(error)throw error;await applySession(null);}catch(e){message('authMessage','退出失败：'+errorText(e),true);}};
+$('logout').onclick=async()=>{if(!cloud||busy||restoreBusy||timerChanging)return;try{const {error}=await cloud.auth.signOut({scope:'local'});if(error)throw error;await applySession(null);}catch(e){message('authMessage','退出失败：'+errorText(e),true);}};
 $('profileForm').onsubmit=async e=>{
   e.preventDefault();if(!cloud||!user)return;const epoch=authEpoch;$('saveProfile').disabled=true;
   try{
@@ -189,43 +310,67 @@ $('profileForm').onsubmit=async e=>{
   }catch(e){if(epoch===authEpoch)message('profileMessage','保存失败：'+errorText(e),true);}finally{$('saveProfile').disabled=false;}
 };
 $('submit').onclick=submitAnswer;$('next').onclick=()=>{if(!busy&&!pending)pickQuestion();};
+$('startStudy').onclick=()=>changeStudyTimer('start');
+$('stopStudy').onclick=()=>changeStudyTimer('stop');
 $('yearFilter').onchange=()=>{if(!busy&&!pending)pickQuestion();};$('categoryFilter').onchange=()=>{if(!busy&&!pending)pickQuestion();};
 $('pdfPanel').ontoggle=()=>{if($('pdfPanel').open&&current)$('sourceFrame').src=$('sourceLink').href;};
-$('heatYear').onchange=renderHeat;$('lookupDay').onchange=lookupDay;$('refresh').onclick=async()=>{if(user){const epoch=authEpoch;try{await loadProfile(epoch);}catch(e){message('profileMessage','读取时间设置失败：'+errorText(e),true);}await refreshRecords();}};
+$('heatYear').onchange=renderHeat;$('lookupDay').onchange=lookupDay;$('refresh').onclick=async()=>{if(user){const epoch=authEpoch;try{await loadProfile(epoch);}catch(e){message('profileMessage','读取时间设置失败：'+errorText(e),true);}await Promise.all([refreshRecords(),refreshStudyTimer()]);}};
 $('retryCloud').onclick=startCloud;
 $('export').onclick=async()=>{
   if(!user||restoreBusy)return;const epoch=authEpoch;$('export').disabled=true;
   try{
-    if(!await refreshRecords()||epoch!==authEpoch)throw Error('未能取得完整云端记录，未生成备份');
-    const backup={format:'takken-study',version:2,owner_id:user.id,exported_at:new Date().toISOString(),profile,answers:records.filter(x=>x.entry_kind!=='legacy'),legacy_answers:records.filter(x=>x.entry_kind==='legacy')};
-    const url=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`takken-study-backup-${jpDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);message('restoreStatus','备份已生成，包含私人设置，请妥善保管。旧演示记录仅归档，不参与正式打卡统计。');
+    const [answersLoaded,sessions]=await Promise.all([refreshRecords(),getAllRows('study_sessions','id,started_at,ended_at',epoch)]);
+    if(!answersLoaded||epoch!==authEpoch)throw Error('未能取得完整云端记录，未生成备份');
+    const backup={format:'takken-study',version:3,owner_id:user.id,exported_at:new Date().toISOString(),profile,answers:records.filter(x=>x.entry_kind!=='legacy'),legacy_answers:records.filter(x=>x.entry_kind==='legacy'),study_sessions:sessions};
+    const url=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`takken-study-backup-${jpDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);message('restoreStatus','备份已生成，包含答题、已结束的学习计时和私人设置。');
   }catch(e){message('restoreStatus',errorText(e),true);}finally{$('export').disabled=false;}
 };
-$('import').onclick=()=>{if(user&&!busy&&!restoreBusy&&!pending)$('importFile').click();else message('restoreStatus','请先完成当前提交，再恢复备份。',true);};
+$('import').onclick=()=>{if(user&&!busy&&!restoreBusy&&!pending&&!timerChanging)$('importFile').click();else message('restoreStatus','请先完成当前操作，再恢复备份。',true);};
 $('importFile').onchange=async()=>{
-  const file=$('importFile').files[0];if(!file||!user)return;const epoch=authEpoch;let imported=0,skipped=0;
+  const file=$('importFile').files[0];
+  $('importFile').value='';
+  if(!file||!user||busy||restoreBusy||pending||timerChanging)return;
+  const epoch=authEpoch;
+  restoreBusy=true;updateFilters();updateTimerButtons();$('import').disabled=true;$('export').disabled=true;$('logout').disabled=true;$('submit').disabled=true;
+  const progress = [
+    {label:'答题',rpc:'restore_study_answers',added:0,skipped:0},
+    {label:'计时',rpc:'restore_study_sessions',added:0,skipped:0}
+  ];
+  const describeProgress = () => progress.map(item => `${item.label}新增 ${item.added} 条、跳过重复 ${item.skipped} 条`).join('。');
   try{
     if(file.size>20*1024*1024)throw Error('备份超过20MB上限');
     const backup=JSON.parse(await file.text());const rows=validateBackup(backup,user.id,new Set(questions.map(q=>q.id)));
-    if(!confirm(`恢复 ${rows.length} 条答题记录？已有相同ID会跳过，不删除或覆盖现有记录；私人时间设置保留当前值。`))return;
-    restoreBusy=true;updateFilters();$('import').disabled=true;$('export').disabled=true;$('logout').disabled=true;$('submit').disabled=true;
-    for(let i=0;i<rows.length;i+=500){
-      if(epoch!==authEpoch)throw Error('账号已切换，停止恢复');
-      const {data,error}=await cloud.rpc('restore_study_answers',{p_rows:rows.slice(i,i+500)});if(error)throw error;
-      if(!data||!Number.isInteger(data.added)||!Number.isInteger(data.skipped))throw Error('未收到有效恢复结果');
-      imported+=data.added;skipped+=data.skipped;message('restoreStatus',`恢复中：已新增 ${imported} 条，跳过重复 ${skipped} 条。`);
+    const sessions=validateStudySessions(backup);
+    if(epoch!==authEpoch)throw Error('账号已切换，停止恢复');
+    if(!confirm(`恢复 ${rows.length} 条答题记录和 ${sessions.length} 条学习计时？相同记录会跳过。`))return;
+    for(const [recordsToRestore, result] of [[rows,progress[0]],[sessions,progress[1]]]){
+      for(let i=0;i<recordsToRestore.length;i+=500){
+        if(epoch!==authEpoch)throw Error('账号已切换，停止恢复');
+        const {data,error}=await cloud.rpc(result.rpc,{p_rows:recordsToRestore.slice(i,i+500)});
+        if(error)throw error;
+        if(epoch!==authEpoch)throw Error('账号已切换，停止恢复');
+        if(!data||!Number.isInteger(data.added)||!Number.isInteger(data.skipped))throw Error('未收到有效恢复结果');
+        result.added+=data.added;result.skipped+=data.skipped;
+        message('restoreStatus',`恢复中：${describeProgress()}。`);
+      }
     }
-    message('restoreStatus',`恢复完成：新增 ${imported} 条，跳过重复 ${skipped} 条。时间设置保留当前值，备份中旧演示记录未导入。`);
-  }catch(e){message('restoreStatus',`恢复未完成：${errorText(e)}。已确认新增 ${imported} 条、跳过 ${skipped} 条；网络出错时实际可能已保存更多。可用同一备份重试，系统按ID去重。`,true);}
+    message('restoreStatus',`恢复完成：${describeProgress()}。`);
+  }catch(e){if(epoch===authEpoch)message('restoreStatus',`恢复未完成：${errorText(e)}。已确认${describeProgress()}。可用同一备份重试，系统按ID去重。`,true);}
   finally{
-    $('importFile').value='';restoreBusy=false;$('import').disabled=false;$('export').disabled=false;$('logout').disabled=false;$('submit').disabled=done||selected===null;updateFilters();
-    if(user&&epoch===authEpoch)await refreshRecords();
+    restoreBusy=false;$('import').disabled=false;$('export').disabled=false;$('logout').disabled=false;$('submit').disabled=done||selected===null;updateFilters();updateTimerButtons();
+    if(user&&epoch===authEpoch)await Promise.all([refreshRecords(),refreshStudyTimer()]);
   }
 };
 $('heatYear').append(new Option(jpDate().slice(0,4),jpDate().slice(0,4)));
 if(typeof ResizeObserver!=='undefined')new ResizeObserver(resizeHeat).observe($('heat').parentElement);
 window.addEventListener('resize',resizeHeat);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden){showClock();if(jpDate()!==rememberedDay){rememberedDay=jpDate();renderLife();renderHeat();}if(user&&Date.now()-lastRefresh>10000&&!restoreBusy)refreshRecords();}});
-setInterval(()=>{showClock();if(jpDate()!==rememberedDay){rememberedDay=jpDate();renderLife();renderHeat();}},1000);
-setInterval(()=>{if(user&&!document.hidden&&!restoreBusy)refreshRecords();},30000);
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden)return;
+  showClock();renderStudyTimer();refreshStudyTimer();
+  if(jpDate()!==rememberedDay){rememberedDay=jpDate();renderLife();renderHeat();}
+  if(user&&Date.now()-lastRefresh>10000&&!restoreBusy)refreshRecords();
+});
+window.addEventListener('online',refreshStudyTimer);
+setInterval(()=>{showClock();if(timerState)renderStudyTimer();if(jpDate()!==rememberedDay){rememberedDay=jpDate();renderLife();renderHeat();}},1000);
+setInterval(()=>{if(user&&!document.hidden&&!restoreBusy){refreshRecords();refreshStudyTimer();}},30000);
 renderLife();showClock();renderHeat();startCloud();
