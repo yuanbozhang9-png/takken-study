@@ -72,7 +72,7 @@ function acceptTimerState(data) {
 }
 
 async function refreshStudyTimer() {
-  if (!user || $('studyArea').hidden || timerChanging || restoreBusy) return false;
+  if (!user || $('studyTimer').hidden || timerChanging || restoreBusy) return false;
   if (timerTask) return timerTask;
   const epoch = authEpoch;
   const task = (async () => {
@@ -104,7 +104,7 @@ async function refreshStudyTimer() {
 }
 
 async function changeStudyTimer(action) {
-  if (!user || $('studyArea').hidden || timerChanging || restoreBusy) return;
+  if (!user || $('studyTimer').hidden || timerChanging || restoreBusy) return;
   if (!timerReady) {
     if (action === 'start') await refreshStudyTimer();
     return;
@@ -252,6 +252,7 @@ async function applySession(session){
   if(user?.id===next?.id && user!==null)return;
   const epoch=++authEpoch;user=next;profile=null;records=[];questions=[];current=null;selected=null;done=false;busy=false;pending=null;refreshTask=null;
   timerState=null;timerTask=null;timerReady=false;timerChanging=false;
+  $('studyTimer').hidden=true;
   renderStudyTimer();message('studyTimerStatus','');updateTimerButtons();
   $('password').value='';$('birthday').value='';$('examAt').value='';$('sourceFrame').removeAttribute('src');$('studyArea').hidden=true;$('profilePanel').hidden=true;$('logout').hidden=!user;$('authForm').hidden=!!user;$('authStatus').textContent=user?'已登录，检查本人访问权限…':'未登录 · 请使用本人的邮箱登录';
   $('explanation').replaceChildren();message('feedback','');message('authMessage','');renderLife();showClock();renderHeat();
@@ -263,6 +264,7 @@ async function applySession(session){
     const {data,error}=await cloud.from('study_questions').select(questionColumns).order('id',{ascending:true}).limit(200);if(error)throw error;if(epoch!==authEpoch)return;
     questions=(data||[]).filter(q=>q.id&&q.exam_year>=2024&&q.exam_year<=2026&&q.correct_options?.length&&/^https:\/\/www\.retio\.or\.jp\//.test(q.source_url));
     $('authStatus').textContent='已登录：'+user.email;$('studyArea').hidden=false;$('profilePanel').hidden=false;
+    $('studyTimer').hidden=false;
     const timerLoad = refreshStudyTimer();
     const full=questions.filter(q=>q.explanation).length;$('bankStatus').textContent=`已核验官方答案 ${questions.length} 道 · 中文解析 ${full} 道 · 2026年待官方答案；无演示题。`;
     pending=loadPending();const pendingQ=questions.find(q=>q.id===pending?.question_id);

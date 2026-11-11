@@ -5,6 +5,8 @@
 
 .toolbar h2{margin:0}.sw.color-0{background:#252a33}.sw.color-1{background:#982434}.sw.color-2{background:#e0ecf6}.sw.color-3{background:#ebf0f6}.sw.color-4{background:#c1d7e8}.sw.color-5{background:#8cb1cb}.sw.color-6{background:#567f9f}.sw.color-7{background:#293340}
 
+.top-clocks{display:flex;flex-wrap:wrap;column-gap:24px;border-bottom:1px solid #e5e9f0}
+.top-clocks>section{flex:1 1 280px;min-width:0;border-bottom:0}
 .study-timer-line{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .study-timer-actions,.study-timer-totals{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
 .study-timer-actions .btn{min-height:44px}
