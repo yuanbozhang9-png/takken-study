@@ -2,7 +2,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; frame-src https://www.retio.or.jp; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
-<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=top-clocks"><script type="module" src="./app.js?v=top-clocks"></script>
+<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=clock-type"><script type="module" src="./app.js?v=top-clocks"></script>
 </head><body><main>
 <div class="top-clocks">
 <section><h2>宅建試験まで</h2><div id="clock" class="digits" role="timer">--- : -- : -- : --</div><div class="small" id="examLabel"></div></section>
@@ -10,8 +10,8 @@
   <h2 id="studyTimerHeading">学习计时</h2>
   <div class="study-timer-line">
     <div>
-      <div class="small" id="studyTimerLabel">累计学习时长</div>
       <div class="digits" id="studyElapsed" role="timer" aria-labelledby="studyTimerLabel">—</div>
+      <div class="small" id="studyTimerLabel">累计学习时长</div>
     </div>
     <div class="study-timer-actions">
       <button class="btn primary" id="startStudy" type="button" disabled>开始学习</button>

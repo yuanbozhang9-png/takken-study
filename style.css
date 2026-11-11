@@ -7,11 +7,10 @@
 
 .top-clocks{display:flex;flex-wrap:wrap;column-gap:24px;border-bottom:1px solid #e5e9f0}
 .top-clocks>section{flex:1 1 280px;min-width:0;border-bottom:0}
-.study-timer-line{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.study-timer-line{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .study-timer-actions,.study-timer-totals{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
 .study-timer-actions .btn{min-height:44px}
 .study-timer-totals{margin:12px 0 0;font-variant-numeric:tabular-nums}
 .study-timer-totals strong{margin-left:4px;color:#394757;font-weight:600}
-#studyElapsed{font-size:clamp(32px,7vw,48px);line-height:1.2}
 #studyCurrent{margin-top:4px}
 #studyTimerStatus:empty{display:none}
