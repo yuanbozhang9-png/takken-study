@@ -14,3 +14,11 @@
 .study-timer-totals strong{margin-left:4px;color:#394757;font-weight:600}
 #studyCurrent{margin-top:4px}
 #studyTimerStatus:empty{display:none}
+#studyCorrection{margin-top:8px}
+#studyCorrection>summary{min-height:44px}
+#studyCorrectionFields{margin:0;padding:0;border:0;min-width:0}
+#studyCorrectionFields select,#studyCorrectionFields input{display:block;width:100%;min-width:0}
+#studyCorrectionFields .btn{min-height:44px;margin-top:10px}
+.study-correction-zone{margin:8px 0 0}
+.study-correction-end-hint{margin:4px 0 0}
+#studyCorrectionStatus:empty{display:none}

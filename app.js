@@ -4,9 +4,11 @@ const $=id=>document.getElementById(id);
 let cloud=null,user=null,profile=null,questions=[],records=[],current=null,selected=null,done=false,busy=false,authBusy=false,pending=null,authEpoch=0,refreshTask=null,restoreBusy=false;
 let rememberedDay=jpDate(),lastRefresh=0;
 let timerState = null, timerTask = null, timerReady = false, timerChanging = false;
+let correctionRecords = null, correctionLoad = null, correctionDraftId = null;
 const PENDING_KEY='takken-pending-v2';
 const questionColumns='id,exam_year,question_number,category,correct_options,source_url,source_page,explanation';
 const answerColumns='id,user_id,studied_on,question_id,selected_option,is_correct,created_at,entry_kind';
+const sessionColumns = 'id,started_at,ended_at';
 function message(id,text,error=false){$(id).textContent=text;$(id).className='note'+(error?' error':'');}
 function errorText(err){
   if (!navigator.onLine) return '当前没有网络连接';
@@ -44,10 +46,11 @@ function renderStudyTimer() {
 }
 
 function updateTimerButtons() {
-  const locked = timerChanging || restoreBusy;
+  const locked = timerChanging || restoreBusy || !!correctionLoad;
   $('startStudy').textContent = !timerReady && !timerTask ? '重新读取计时' : '开始学习';
   $('startStudy').disabled = locked || (!timerReady && !!timerTask) || (timerReady && !!timerState?.active);
   $('stopStudy').disabled = locked || !timerReady || !timerState?.active;
+  $('studyCorrectionFields').disabled = locked || !correctionRecords;
 }
 
 function acceptTimerState(data) {
@@ -104,7 +107,7 @@ async function refreshStudyTimer() {
 }
 
 async function changeStudyTimer(action) {
-  if (!user || $('studyTimer').hidden || timerChanging || restoreBusy) return;
+  if (!user || $('studyTimer').hidden || timerChanging || restoreBusy || correctionLoad) return;
   if (!timerReady) {
     if (action === 'start') await refreshStudyTimer();
     return;
@@ -112,6 +115,7 @@ async function changeStudyTimer(action) {
   const activeId = timerState.active?.id;
   if ((action === 'stop') !== !!activeId) return;
   const epoch = authEpoch;
+  let saved = false;
   timerChanging = true;
   updateTimerButtons();
   try {
@@ -124,6 +128,7 @@ async function changeStudyTimer(action) {
     if (error) throw error;
     if (epoch !== authEpoch) return;
     acceptTimerState(data);
+    saved = true;
     message('studyTimerStatus', action === 'stop' ? '学习时长已保存。' : '');
   } catch (e) {
     if (epoch === authEpoch) {
@@ -134,6 +139,157 @@ async function changeStudyTimer(action) {
     if (epoch === authEpoch) {
       timerChanging = false;
       updateTimerButtons();
+    }
+  }
+  if (epoch === authEpoch && (saved || !correctionRecords)) {
+    const preferredId = saved ? (action === 'start' ? timerState.active?.id : activeId) : undefined;
+    await loadStudyCorrections(preferredId);
+  }
+}
+
+function japanStudyInput(timestamp) {
+  return timestamp ? new Date(Date.parse(timestamp) + 9 * 3600000).toISOString().slice(0, 19) : '';
+}
+
+function parseStudyInput(value, original) {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,3})?)?$/.test(value)) {
+    throw new Error('请填写有效的日期和时间。');
+  }
+  toDay(value.slice(0, 10));
+  const time = Date.parse(value + (value.length === 16 ? ':00' : '') + '+09:00');
+  // Keep the original milliseconds when the visible value was left unchanged.
+  return Math.floor(Date.parse(original) / 1000) * 1000 === time
+    ? original : new Date(time).toISOString();
+}
+
+function fillStudyCorrection() {
+  const record = correctionRecords?.get($('studyCorrectionRecord').value);
+  const running = !!record && record.ended_at === null;
+  $('studyCorrectionStart').value = japanStudyInput(record?.started_at);
+  $('studyCorrectionEnd').value = japanStudyInput(record?.ended_at);
+  $('studyCorrectionEnd').required = !running;
+  $('studyCorrectionEndHint').hidden = !running;
+  correctionDraftId = null;
+}
+
+function showStudyCorrectionRecords(preferredId) {
+  const ordered = [...correctionRecords.values()].sort((a, b) =>
+    Number(a.ended_at !== null) - Number(b.ended_at !== null)
+    || Date.parse(b.started_at) - Date.parse(a.started_at)
+  );
+  const select = $('studyCorrectionRecord');
+  select.replaceChildren(new Option('补记一段学习', 'new'));
+  for (const record of ordered) {
+    const start = japanStudyInput(record.started_at).slice(0, 16);
+    const end = japanStudyInput(record.ended_at).slice(0, 16);
+    const startLabel = start.replace('T', ' ');
+    const endLabel = end.slice(0, 10) === start.slice(0, 10) ? end.slice(11) : end.replace('T', ' ');
+    const label = end ? `${startLabel} ～ ${endLabel}` : `进行中 · ${startLabel}`;
+    select.add(new Option(label, record.id));
+  }
+  const running = ordered.find(record => record.ended_at === null);
+  select.value = preferredId === 'new' || correctionRecords.has(preferredId)
+    ? preferredId : running?.id || 'new';
+  fillStudyCorrection();
+}
+
+async function loadStudyCorrections(preferredId) {
+  if (!user || $('studyTimer').hidden || !$('studyCorrection').open || timerChanging || restoreBusy) return false;
+  if (correctionLoad) return correctionLoad;
+  const epoch = authEpoch;
+  message('studyCorrectionStatus', '正在读取学习记录…');
+  const task = (async () => {
+    try {
+      const rows = await getAllRows('study_sessions', sessionColumns, epoch, true);
+      if (epoch !== authEpoch) return false;
+      correctionRecords = new Map(rows.map(record => [record.id, record]));
+      showStudyCorrectionRecords(preferredId);
+      message('studyCorrectionStatus', '');
+      return true;
+    } catch (e) {
+      if (epoch === authEpoch) {
+        correctionRecords = null;
+        message('studyCorrectionStatus', '读取学习记录失败。请收起后重新打开。' + errorText(e), true);
+      }
+      return false;
+    }
+  })();
+  correctionLoad = task;
+  updateTimerButtons();
+  try {
+    return await task;
+  } finally {
+    if (correctionLoad === task) {
+      correctionLoad = null;
+      updateTimerButtons();
+    }
+  }
+}
+
+async function saveStudyCorrection(event) {
+  event.preventDefault();
+  if (!user || $('studyTimer').hidden || !correctionRecords || correctionLoad || timerChanging || restoreBusy) return;
+  const selectedId = $('studyCorrectionRecord').value;
+  const original = correctionRecords.get(selectedId);
+  const epoch = authEpoch;
+  let stale = false;
+  let id;
+  let startedAt;
+  let endedAt;
+  try {
+    startedAt = parseStudyInput($('studyCorrectionStart').value, original?.started_at);
+    endedAt = parseStudyInput($('studyCorrectionEnd').value, original?.ended_at);
+    if (!startedAt || (!endedAt && (!original || original.ended_at !== null))) {
+      throw new Error('请填写学习的开始和结束时间。');
+    }
+    if (endedAt && Date.parse(endedAt) <= Date.parse(startedAt)) {
+      throw new Error('结束时间须晚于开始时间。');
+    }
+    id = original?.id || (correctionDraftId ??= newId());
+  } catch (e) {
+    message('studyCorrectionStatus', errorText(e), true);
+    return;
+  }
+  timerChanging = true;
+  updateTimerButtons();
+  message('studyCorrectionStatus', '正在保存修正…');
+  try {
+    if (timerTask) await timerTask;
+    if (epoch !== authEpoch) return;
+    const {data, error} = await cloud.rpc('correct_study_session', {
+      p_id: id,
+      p_started_at: startedAt,
+      p_ended_at: endedAt,
+      p_original_started_at: original?.started_at ?? null,
+      p_original_ended_at: original?.ended_at ?? null
+    });
+    if (error) throw error;
+    if (epoch !== authEpoch) return;
+    acceptTimerState(data);
+    message('studyTimerStatus', '');
+    correctionRecords.set(id, {id, started_at: startedAt, ended_at: endedAt});
+    showStudyCorrectionRecords(id);
+    message('studyCorrectionStatus', original ? '时间已修正。' : '学习时间已补记。');
+  } catch (e) {
+    if (epoch !== authEpoch) return;
+    stale = e.code === '40001';
+    const errors = {
+      '40001': '这条记录已更新，请核对最新时间。',
+      '23P01': '这段时间和已有学习记录重叠，请调整起止时间。',
+      '22023': '请填写已发生的时间，结束须晚于开始。'
+    };
+    message('studyCorrectionStatus', errors[e.code] || '保存未确认，可用相同时间重试。' + errorText(e), true);
+  } finally {
+    if (epoch === authEpoch) {
+      timerChanging = false;
+      updateTimerButtons();
+    }
+  }
+  if (stale && epoch === authEpoch) {
+    const [loaded] = await Promise.all([loadStudyCorrections(id), refreshStudyTimer()]);
+    if (loaded && epoch === authEpoch) {
+      message('studyCorrectionStatus', '已载入最新时间，请核对后再修正。', true);
     }
   }
 }
@@ -209,11 +365,11 @@ function renderExplanation(q,row){
   const source=document.createElement('a');source.target='_blank';source.rel='noopener noreferrer';source.textContent='核对官方标准答案（PDF末页）';source.href=q.source_url;root.append(source);
   message('feedback',`${row.is_correct?'回答正确':'回答错误'} · 官方正确选项 ${q.correct_options.map(n=>n+1).join('、')}\n打卡已同步到云端 · ${row.studied_on}（日本日期）`);
 }
-async function getAllRows(table, columns, epoch){
+async function getAllRows(table, columns, epoch, includeRunning = false){
   const rows=[];let after=null;
   for(let page=0;page<1000;page++){
     let query=cloud.from(table).select(columns).eq('user_id',user.id).order('id',{ascending:true}).limit(500);
-    if(table==='study_sessions')query=query.not('ended_at','is',null);
+    if(table==='study_sessions'&&!includeRunning)query=query.not('ended_at','is',null);
     if(after)query=query.gt('id',after);
     const {data,error}=await query;if(error)throw error;if(epoch!==authEpoch)throw Error('账号已切换');
     rows.push(...(data||[]));if(!data||data.length<500)return rows;after=data[data.length-1].id;
@@ -252,6 +408,10 @@ async function applySession(session){
   if(user?.id===next?.id && user!==null)return;
   const epoch=++authEpoch;user=next;profile=null;records=[];questions=[];current=null;selected=null;done=false;busy=false;pending=null;refreshTask=null;
   timerState=null;timerTask=null;timerReady=false;timerChanging=false;
+  correctionRecords=null;correctionLoad=null;
+  $('studyCorrection').open=false;
+  $('studyCorrectionRecord').replaceChildren();
+  fillStudyCorrection();message('studyCorrectionStatus','');
   $('studyTimer').hidden=true;
   renderStudyTimer();message('studyTimerStatus','');updateTimerButtons();
   $('password').value='';$('birthday').value='';$('examAt').value='';$('sourceFrame').removeAttribute('src');$('studyArea').hidden=true;$('profilePanel').hidden=true;$('logout').hidden=!user;$('authForm').hidden=!!user;$('authStatus').textContent=user?'已登录，检查本人访问权限…':'未登录 · 请使用本人的邮箱登录';
@@ -314,6 +474,12 @@ $('profileForm').onsubmit=async e=>{
 $('submit').onclick=submitAnswer;$('next').onclick=()=>{if(!busy&&!pending)pickQuestion();};
 $('startStudy').onclick=()=>changeStudyTimer('start');
 $('stopStudy').onclick=()=>changeStudyTimer('stop');
+$('studyCorrection').ontoggle=()=>loadStudyCorrections();
+$('studyCorrectionRecord').onchange=()=>{
+  fillStudyCorrection();
+  message('studyCorrectionStatus','');
+};
+$('studyCorrectionForm').onsubmit=saveStudyCorrection;
 $('yearFilter').onchange=()=>{if(!busy&&!pending)pickQuestion();};$('categoryFilter').onchange=()=>{if(!busy&&!pending)pickQuestion();};
 $('pdfPanel').ontoggle=()=>{if($('pdfPanel').open&&current)$('sourceFrame').src=$('sourceLink').href;};
 $('heatYear').onchange=renderHeat;$('lookupDay').onchange=lookupDay;$('refresh').onclick=async()=>{if(user){const epoch=authEpoch;try{await loadProfile(epoch);}catch(e){message('profileMessage','读取时间设置失败：'+errorText(e),true);}await Promise.all([refreshRecords(),refreshStudyTimer()]);}};
@@ -321,7 +487,7 @@ $('retryCloud').onclick=startCloud;
 $('export').onclick=async()=>{
   if(!user||restoreBusy)return;const epoch=authEpoch;$('export').disabled=true;
   try{
-    const [answersLoaded,sessions]=await Promise.all([refreshRecords(),getAllRows('study_sessions','id,started_at,ended_at',epoch)]);
+    const [answersLoaded,sessions]=await Promise.all([refreshRecords(),getAllRows('study_sessions',sessionColumns,epoch)]);
     if(!answersLoaded||epoch!==authEpoch)throw Error('未能取得完整云端记录，未生成备份');
     const backup={format:'takken-study',version:3,owner_id:user.id,exported_at:new Date().toISOString(),profile,answers:records.filter(x=>x.entry_kind!=='legacy'),legacy_answers:records.filter(x=>x.entry_kind==='legacy'),study_sessions:sessions};
     const url=URL.createObjectURL(new Blob([JSON.stringify(backup,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`takken-study-backup-${jpDate()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);message('restoreStatus','备份已生成，包含答题、已结束的学习计时和私人设置。');
@@ -360,7 +526,7 @@ $('importFile').onchange=async()=>{
   }catch(e){if(epoch===authEpoch)message('restoreStatus',`恢复未完成：${errorText(e)}。已确认${describeProgress()}。可用同一备份重试，系统按ID去重。`,true);}
   finally{
     restoreBusy=false;$('import').disabled=false;$('export').disabled=false;$('logout').disabled=false;$('submit').disabled=done||selected===null;updateFilters();updateTimerButtons();
-    if(user&&epoch===authEpoch)await Promise.all([refreshRecords(),refreshStudyTimer()]);
+    if(user&&epoch===authEpoch)await Promise.all([refreshRecords(),refreshStudyTimer(),loadStudyCorrections($('studyCorrectionRecord').value)]);
   }
 };
 $('heatYear').append(new Option(jpDate().slice(0,4),jpDate().slice(0,4)));

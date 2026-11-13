@@ -2,7 +2,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; frame-src https://www.retio.or.jp; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
-<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=clock-type"><script type="module" src="./app.js?v=top-clocks"></script>
+<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=time-correction"><script type="module" src="./app.js?v=time-correction"></script>
 </head><body><main>
 <div class="top-clocks">
 <section><h2>宅建試験まで</h2><div id="clock" class="digits" role="timer">--- : -- : -- : --</div><div class="small" id="examLabel"></div></section>
@@ -21,6 +21,23 @@
   <p class="small study-timer-totals"><span>本月 <strong id="studyMonth">—</strong></span><span>本周 <strong id="studyWeek">—</strong></span></p>
   <div id="studyCurrent" class="small" hidden></div>
   <div id="studyTimerStatus" class="note" role="status"></div>
+  <details id="studyCorrection">
+    <summary>修正时间</summary>
+    <form id="studyCorrectionForm">
+      <fieldset id="studyCorrectionFields" disabled>
+        <label class="small-label" for="studyCorrectionRecord">学习记录</label>
+        <select id="studyCorrectionRecord"></select>
+        <p class="small study-correction-zone">按日本时间填写</p>
+        <label class="small-label" for="studyCorrectionStart">开始时间</label>
+        <input id="studyCorrectionStart" type="datetime-local" step="1" required>
+        <label class="small-label" for="studyCorrectionEnd">结束时间</label>
+        <input id="studyCorrectionEnd" type="datetime-local" step="1" required aria-describedby="studyCorrectionEndHint">
+        <p class="small study-correction-end-hint" id="studyCorrectionEndHint" hidden>留空可继续计时，填入实际结束时间即可停止。</p>
+        <button class="btn secondary" type="submit">保存修正</button>
+      </fieldset>
+      <p id="studyCorrectionStatus" class="note" role="status"></p>
+    </form>
+  </details>
 </section>
 </div>
 <section><h2>30歳までの時間</h2><div class="statline"><span id="pastStat"></span><span id="futureStat"></span></div><div id="life" class="life"></div><p id="lifeLock" class="life-lock">登录后读取私人出生日期，显示30行人生时间轴。出生日期不写入公开源码。</p><div class="legend"><span><i class="sw color-0"></i>过去</span><span><i class="sw color-1"></i>今天</span><span><i class="sw color-2"></i>未来</span></div></section>
