@@ -1,10 +1,11 @@
 import {CONFIG} from './config.js';
-import {DEFAULT_EXAM,jpDate,toDay,dateFromDay,lifeModel,nextBirthday,countdown,calendarCells,heatLevel,statistics,validateBackup,validateStudySessions,formatStudyDuration,studyPeriodStarts,randomQuestion,UUID,newId} from './core.js?v=birthday-countdown';
+import {CHECKIN_MS,DEFAULT_EXAM,jpDate,toDay,dateFromDay,lifeModel,nextBirthday,countdown,calendarCells,statistics,validateBackup,validateStudySessions,formatStudyDuration,extendDailyStudyTime,studyPeriodStarts,randomQuestion,UUID,newId} from './core.js?v=timed-checkin';
 const $=id=>document.getElementById(id);
 let cloud=null,user=null,profile=null,questions=[],records=[],current=null,selected=null,done=false,busy=false,authBusy=false,pending=null,authEpoch=0,refreshTask=null,restoreBusy=false;
 let rememberedDay=jpDate(),lastRefresh=0;
 let birthdayTarget = null;
 let timerState = null, timerTask = null, timerReady = false, timerChanging = false;
+let heatToday = '', heatTodayChecked = false;
 let correctionRecords = null, correctionLoad = null, correctionDraftId = null;
 const PENDING_KEY='takken-pending-v2';
 const questionColumns='id,exam_year,question_number,category,correct_options,source_url,source_page,explanation';
@@ -35,15 +36,29 @@ function showClock(){
   const local=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',dateStyle:'long',timeStyle:'short'}).format(new Date(target));
   $('examLabel').textContent=local+'（日本时间；个人暂定日期，非官方确认日期）';
 }
-function renderStudyTimer() {
+function studyNow() {
+  return timerState
+    ? timerState.serverNow + Math.max(0, performance.now() - timerState.receivedAt)
+    : Date.now();
+}
+
+function dailyStudyTime(now) {
+  if (!timerState) return new Map();
+  const {dailyMs, active, serverNow} = timerState;
+  return active ? extendDailyStudyTime(dailyMs, Math.max(serverNow, active.startedAt), now) : dailyMs;
+}
+
+function renderStudyTimer(refreshCalendar = false) {
   if (!timerState) {
     for (const id of ['studyElapsed', 'studyMonth', 'studyWeek']) $(id).textContent = '—';
     $('studyCurrent').hidden = true;
     $('studyCurrent').textContent = '';
+    $('studyCheckin').hidden = true;
+    $('studyCheckin').textContent = '';
     return;
   }
-  const {active, serverNow, receivedAt, periodStarts, totalMs, monthMs, weekMs} = timerState;
-  const now = serverNow + Math.max(0, performance.now() - receivedAt);
+  const {active, periodStarts, totalMs, monthMs, weekMs} = timerState;
+  const now = studyNow();
   const periods = studyPeriodStarts(now);
   const runningSince = start => active ? Math.max(0, now - Math.max(active.startedAt, start)) : 0;
   $('studyElapsed').textContent = formatStudyDuration(totalMs + runningSince(0));
@@ -55,6 +70,15 @@ function renderStudyTimer() {
   );
   $('studyCurrent').hidden = !active;
   $('studyCurrent').textContent = active ? '计时中 · 本次 ' + formatStudyDuration(runningSince(0)) : '';
+
+  const daily = dailyStudyTime(now);
+  const today = jpDate(new Date(now));
+  const checked = (daily.get(today) ?? 0) >= CHECKIN_MS;
+  const status = checked ? '今日已打卡' : '今日未打卡';
+  $('studyCheckin').hidden = false;
+  if ($('studyCheckin').textContent !== status) $('studyCheckin').textContent = status;
+  if (refreshCalendar || today !== heatToday || checked !== heatTodayChecked) renderHeat(daily, today);
+  else if (active) lookupDay(daily);
 }
 
 function updateTimerButtons() {
@@ -69,7 +93,10 @@ function acceptTimerState(data) {
   const serverNow = Date.parse(data?.server_now);
   const startedAt = data?.active ? Date.parse(data.active.started_at) : null;
   const totals = [data?.total_ms, data?.month_ms, data?.week_ms];
+  const daily = data?.daily_ms;
   if (!Number.isFinite(serverNow) || totals.some(n => !Number.isSafeInteger(n) || n < 0)
+    || !daily || typeof daily !== 'object' || Array.isArray(daily)
+    || Object.values(daily).some(n => !Number.isSafeInteger(n) || n < 0)
     || (data?.active && (!UUID.test(data.active.id) || !Number.isFinite(startedAt)))) {
     throw new Error('未收到有效的云端计时状态');
   }
@@ -80,10 +107,11 @@ function acceptTimerState(data) {
     periodStarts: studyPeriodStarts(serverNow),
     totalMs: data.total_ms,
     monthMs: data.month_ms,
-    weekMs: data.week_ms
+    weekMs: data.week_ms,
+    dailyMs: new Map(Object.entries(daily))
   };
   timerReady = true;
-  renderStudyTimer();
+  renderStudyTimer(true);
 }
 
 async function refreshStudyTimer() {
@@ -328,30 +356,67 @@ function renderLife(){
     birthdayTarget = nextBirthday(profile.birthday);
   }catch(e){$('lifeLock').hidden=false;$('lifeLock').textContent='出生日期无效，请重新设置。';}
 }
-function renderHeat(){
-  const stats=statistics(records),year=+$('heatYear').value||+jpDate().slice(0,4),today=jpDate();
-  $('counter').textContent=`累计打卡 ${stats.days} 天 · 答题 ${stats.quantity} 道 · 正确率 ${stats.accuracy===null?'—':(stats.accuracy*100).toFixed(1)+'%'} · 今日 ${stats.counts.get(today)||0} 道`;
-  const days=calendarCells(year),frag=document.createDocumentFragment();let yearly=0,active=0;
-  for(const date of days){
-    const cell=document.createElement('button');cell.type='button';cell.className='cell';
-    if(!date){cell.classList.add('blank');cell.disabled=true;cell.tabIndex=-1;cell.setAttribute('aria-hidden','true');}
-    else{const n=stats.counts.get(date)||0;yearly+=n;if(n)active++;const level=heatLevel(n);if(level)cell.classList.add('l'+level);if(date===today)cell.classList.add('current');cell.title=`${date}：${n}题`;cell.setAttribute('aria-label',cell.title);cell.onclick=()=>{$('lookupDay').value=date;lookupDay();};}
+function renderAnswerStats() {
+  const stats = statistics(records);
+  const accuracy = stats.accuracy === null ? '—' : (stats.accuracy * 100).toFixed(1) + '%';
+  $('answerStats').textContent = `累计答题 ${stats.quantity} 道 · 正确率 ${accuracy} · 今日 ${stats.counts.get(jpDate()) ?? 0} 道`;
+}
+
+function checkinDetail(duration) {
+  if (!timerState) return '等待同步计时记录';
+  const status = duration >= CHECKIN_MS ? '已打卡' : '未打卡';
+  return `${status} · 学习 ${formatStudyDuration(duration)}`;
+}
+
+function renderHeat(daily = dailyStudyTime(studyNow()), today = jpDate(new Date(studyNow()))) {
+  const currentYear = Number(today.slice(0, 4));
+  const year = Number($('heatYear').value) || currentYear;
+  const frag = document.createDocumentFragment();
+  let yearChecked = 0;
+  for (const date of calendarCells(year)) {
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.className = 'cell';
+    if (!date) {
+      cell.classList.add('blank');
+      cell.disabled = true;
+      cell.tabIndex = -1;
+      cell.setAttribute('aria-hidden', 'true');
+    } else {
+      const duration = daily.get(date) ?? 0;
+      const checked = duration >= CHECKIN_MS;
+      if (checked) yearChecked++;
+      cell.classList.toggle('checked', checked);
+      cell.classList.toggle('current', date === today);
+      cell.title = `${date} · ${checkinDetail(duration)}`;
+      cell.setAttribute('aria-label', cell.title);
+      cell.onclick = () => { $('lookupDay').value = date; lookupDay(); };
+    }
     frag.append(cell);
   }
-  $('heat').replaceChildren(frag);$('yearCounter').textContent=`${year}年 · 打卡 ${active} 天 · 答题 ${yearly} 道`;
-  const years=new Set([+today.slice(0,4),+today.slice(0,4)-1,+today.slice(0,4)+1,year,...records.map(x=>Number(x.studied_on.slice(0,4)))]);
+  $('heat').replaceChildren(frag);
+  const totalChecked = [...daily.values()].filter(duration => duration >= CHECKIN_MS).length;
+  $('checkinCounter').textContent = timerState
+    ? `累计打卡 ${totalChecked} 天 · ${year} 年打卡 ${yearChecked} 天` : '等待同步计时记录';
+  const years = new Set([currentYear, currentYear - 1, currentYear + 1, year,
+    ...Array.from(daily.keys(), date => Number(date.slice(0, 4)))]);
   $('heatYear').replaceChildren(...[...years].sort((a,b)=>b-a).map(n=>new Option(n,n)));$('heatYear').value=year;
   $('heatMonths').replaceChildren(...Array.from({length:12},(_,i)=>{const s=document.createElement('span');s.textContent=(i+1)+'月';return s;}));
-  if(!$('lookupDay').value)$('lookupDay').value=today;
-  lookupDay();resizeHeat();
+  if (!$('lookupDay').value || $('lookupDay').value === heatToday) $('lookupDay').value = today;
+  heatToday = today;
+  heatTodayChecked = (daily.get(today) ?? 0) >= CHECKIN_MS;
+  lookupDay(daily);resizeHeat();
 }
 function resizeHeat(){const width=$('heat').parentElement.clientWidth;if(width>0)$('heat').style.setProperty('--heat-cell',Math.max(3,Math.min(10,(width-2*52)/53))+'px');}
-function lookupDay(){const d=$('lookupDay').value;const n=statistics(records).counts.get(d)||0;$('heatDetail').textContent=`${n} 道已保存答案`;}
+function lookupDay(daily = dailyStudyTime(studyNow())) {
+  const date = $('lookupDay').value;
+  $('heatDetail').textContent = date ? checkinDetail(daily.get(date) ?? 0) : '';
+}
 function updateFilters(){const locked=busy||!!pending||restoreBusy;$('yearFilter').disabled=locked;$('categoryFilter').disabled=locked;}
 function savePending(){if(!user)return;try{if(pending)sessionStorage.setItem(PENDING_KEY,JSON.stringify({...pending,owner_id:user.id}));else sessionStorage.removeItem(PENDING_KEY);}catch{message('feedback','浏览器无法保留待确认提交。网络出错后请勿关闭此页。',true);}}
 function loadPending(){try{const p=JSON.parse(sessionStorage.getItem(PENDING_KEY));return p&&p.owner_id===user?.id&&UUID.test(p.id)&&typeof p.question_id==='string'&&Number.isInteger(p.selected_option)&&p.selected_option>=0&&p.selected_option<4?p:null;}catch{return null;}}
 function showQuestion(q,restoreSelection=null){
-  current=q;done=false;selected=restoreSelection;$('answers').replaceChildren();$('explanation').replaceChildren();$('next').hidden=true;$('submit').textContent=pending?'重试确认保存':'提交并打卡';message('feedback','');$('pdfPanel').open=false;$('sourceFrame').removeAttribute('src');
+  current=q;done=false;selected=restoreSelection;$('answers').replaceChildren();$('explanation').replaceChildren();$('next').hidden=true;$('submit').textContent=pending?'重试确认保存':'提交答案';message('feedback','');$('pdfPanel').open=false;$('sourceFrame').removeAttribute('src');
   if(!q){$('question').textContent='此筛选下暂无已核验题目。';$('questionMeta').textContent='';$('sourceLink').hidden=true;$('submit').disabled=true;$('pdfPanel').hidden=true;return;}
   $('pdfPanel').hidden=false;$('questionMeta').textContent=`${q.exam_year}年 · 問${q.question_number} · ${q.category}`;
   $('question').textContent=`请阅读 ${q.exam_year} 年官方试卷的「問${q.question_number}」，选择其中的答案编号。`;
@@ -377,7 +442,7 @@ function renderExplanation(q,row){
     const ja=document.createElement('p');ja.lang='ja';ja.textContent='日文原文：'+law.ja;const zh=document.createElement('p');zh.textContent='中文翻译：'+law.zh;box.append(a,ja,zh);root.append(box);
   }
   const source=document.createElement('a');source.target='_blank';source.rel='noopener noreferrer';source.textContent='核对官方标准答案（PDF末页）';source.href=q.source_url;root.append(source);
-  message('feedback',`${row.is_correct?'回答正确':'回答错误'} · 官方正确选项 ${q.correct_options.map(n=>n+1).join('、')}\n打卡已同步到云端 · ${row.studied_on}（日本日期）`);
+  message('feedback',`${row.is_correct?'回答正确':'回答错误'} · 官方正确选项 ${q.correct_options.map(n=>n+1).join('、')}\n答案已保存到云端 · ${row.studied_on}（日本日期）`);
 }
 async function getAllRows(table, columns, epoch, includeRunning = false){
   const rows=[];let after=null;
@@ -393,7 +458,7 @@ async function getAllRows(table, columns, epoch, includeRunning = false){
 async function refreshRecords(){
   if(!cloud||!user)return false;if(refreshTask)return refreshTask;
   const epoch=authEpoch;
-  const task=(async()=>{try{const data=await getAllRows('study_answers',answerColumns,epoch);if(epoch!==authEpoch)return false;records=data;lastRefresh=Date.now();renderHeat();$('syncStatus').textContent='完整云端记录已同步 · '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',timeStyle:'medium'}).format(new Date())+'（日本时间）';return true;}catch(e){if(epoch===authEpoch)$('syncStatus').textContent='读取失败：'+errorText(e)+'。暂保留上次已确认记录。';return false;}finally{if(refreshTask===task)refreshTask=null;}})();refreshTask=task;return task;
+  const task=(async()=>{try{const data=await getAllRows('study_answers',answerColumns,epoch);if(epoch!==authEpoch)return false;records=data;lastRefresh=Date.now();renderAnswerStats();$('syncStatus').textContent='答题记录已同步 · '+new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',timeStyle:'medium'}).format(new Date())+'（日本时间）';return true;}catch(e){if(epoch===authEpoch)$('syncStatus').textContent='答题记录读取失败：'+errorText(e)+'。暂保留上次已确认记录。';return false;}finally{if(refreshTask===task)refreshTask=null;}})();refreshTask=task;return task;
 }
 async function submitAnswer(){
   if(selected===null||done||busy||restoreBusy||!cloud||!user||!current)return;
@@ -407,9 +472,9 @@ async function submitAnswer(){
     if(!row||row.id!==pending.id||row.user_id!==uid||row.question_id!==q.id||row.selected_option!==selected||typeof row.is_correct!=='boolean')throw Error('云端未返回可验证的保存结果');
     records=[...records.filter(x=>x.id!==row.id),row];done=true;pending=null;savePending();
     [...$('answers').children].forEach((b,i)=>{b.disabled=true;b.classList.toggle('correct',q.correct_options.includes(i));});$('next').hidden=false;
-    renderExplanation(q,row);renderHeat();await refreshRecords();
-  }catch(e){if(epoch===authEpoch)message('feedback','保存未确认，尚未显示打卡成功：'+errorText(e)+'。请重试确认，系统会防止重复。',true);}
-  finally{if(epoch===authEpoch){busy=false;$('submit').disabled=done||selected===null;$('submit').textContent=done?'已保存':pending?'重试确认保存':'提交并打卡';updateFilters();}}
+    renderExplanation(q,row);renderAnswerStats();await refreshRecords();
+  }catch(e){if(epoch===authEpoch)message('feedback','答案保存未确认：'+errorText(e)+'。请重试确认，系统会防止重复。',true);}
+  finally{if(epoch===authEpoch){busy=false;$('submit').disabled=done||selected===null;$('submit').textContent=done?'已保存':pending?'重试确认保存':'提交答案';updateFilters();}}
 }
 async function loadProfile(epoch){
   const {data,error}=await cloud.from('study_profile').select('birthday,exam_at').eq('user_id',user.id).maybeSingle();if(error)throw error;if(epoch!==authEpoch)return;
@@ -427,9 +492,12 @@ async function applySession(session){
   $('studyCorrectionRecord').replaceChildren();
   fillStudyCorrection();message('studyCorrectionStatus','');
   $('studyTimer').hidden=true;
+  $('cloudTools').hidden=true;
+  $('syncStatus').textContent='尚未同步。';
+  message('restoreStatus','');
   renderStudyTimer();message('studyTimerStatus','');updateTimerButtons();
   $('password').value='';$('birthday').value='';$('examAt').value='';$('sourceFrame').removeAttribute('src');$('studyArea').hidden=true;$('profilePanel').hidden=true;$('logout').hidden=!user;$('authForm').hidden=!!user;$('authStatus').textContent=user?'已登录，检查本人访问权限…':'未登录 · 请使用本人的邮箱登录';
-  $('explanation').replaceChildren();message('feedback','');message('authMessage','');renderLife();showClock();renderHeat();
+  $('explanation').replaceChildren();message('feedback','');message('authMessage','');renderLife();showClock();renderHeat();renderAnswerStats();
   if(!user)return;
   try{
     const {data:allowed,error:ownerError}=await cloud.rpc('is_study_owner');if(ownerError)throw ownerError;if(!allowed)throw Error('账号未被授权，或管理员尚未绑定唯一账号');
@@ -439,6 +507,7 @@ async function applySession(session){
     questions=(data||[]).filter(q=>q.id&&q.exam_year>=2024&&q.exam_year<=2026&&q.correct_options?.length&&/^https:\/\/www\.retio\.or\.jp\//.test(q.source_url));
     $('authStatus').textContent='已登录：'+user.email;$('studyArea').hidden=false;$('profilePanel').hidden=false;
     $('studyTimer').hidden=false;
+    $('cloudTools').hidden=false;
     const timerLoad = refreshStudyTimer();
     const full=questions.filter(q=>q.explanation).length;$('bankStatus').textContent=`已核验官方答案 ${questions.length} 道 · 中文解析 ${full} 道 · 2026年待官方答案；无演示题。`;
     pending=loadPending();const pendingQ=questions.find(q=>q.id===pending?.question_id);
@@ -496,7 +565,7 @@ $('studyCorrectionRecord').onchange=()=>{
 $('studyCorrectionForm').onsubmit=saveStudyCorrection;
 $('yearFilter').onchange=()=>{if(!busy&&!pending)pickQuestion();};$('categoryFilter').onchange=()=>{if(!busy&&!pending)pickQuestion();};
 $('pdfPanel').ontoggle=()=>{if($('pdfPanel').open&&current)$('sourceFrame').src=$('sourceLink').href;};
-$('heatYear').onchange=renderHeat;$('lookupDay').onchange=lookupDay;$('refresh').onclick=async()=>{if(user){const epoch=authEpoch;try{await loadProfile(epoch);}catch(e){message('profileMessage','读取时间设置失败：'+errorText(e),true);}await Promise.all([refreshRecords(),refreshStudyTimer()]);}};
+$('heatYear').onchange=()=>renderHeat();$('lookupDay').onchange=()=>lookupDay();$('refresh').onclick=async()=>{if(user){const epoch=authEpoch;try{await loadProfile(epoch);}catch(e){message('profileMessage','读取时间设置失败：'+errorText(e),true);}await Promise.all([refreshRecords(),refreshStudyTimer()]);}};
 $('retryCloud').onclick=startCloud;
 $('export').onclick=async()=>{
   if(!user||restoreBusy)return;const epoch=authEpoch;$('export').disabled=true;
@@ -546,13 +615,23 @@ $('importFile').onchange=async()=>{
 $('heatYear').append(new Option(jpDate().slice(0,4),jpDate().slice(0,4)));
 if(typeof ResizeObserver!=='undefined')new ResizeObserver(resizeHeat).observe($('heat').parentElement);
 window.addEventListener('resize',resizeHeat);
+function updateClocks() {
+  showClock();
+  if (timerState) renderStudyTimer();
+  const today = jpDate();
+  if (today !== rememberedDay) {
+    rememberedDay = today;
+    renderLife();
+    renderAnswerStats();
+    if (!timerState) renderHeat();
+  }
+}
 document.addEventListener('visibilitychange',()=>{
   if(document.hidden)return;
-  showClock();renderStudyTimer();refreshStudyTimer();
-  if(jpDate()!==rememberedDay){rememberedDay=jpDate();renderLife();renderHeat();}
+  updateClocks();refreshStudyTimer();
   if(user&&Date.now()-lastRefresh>10000&&!restoreBusy)refreshRecords();
 });
 window.addEventListener('online',refreshStudyTimer);
-setInterval(()=>{showClock();if(timerState)renderStudyTimer();if(jpDate()!==rememberedDay){rememberedDay=jpDate();renderLife();renderHeat();}},1000);
+setInterval(updateClocks,1000);
 setInterval(()=>{if(user&&!document.hidden&&!restoreBusy){refreshRecords();refreshStudyTimer();}},30000);
-renderLife();showClock();renderHeat();startCloud();
+renderLife();showClock();renderHeat();renderAnswerStats();startCloud();

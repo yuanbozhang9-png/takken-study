@@ -1,4 +1,5 @@
 export const DAY_MS = 86400000;
+export const CHECKIN_MS = 5 * 60 * 1000;
 export const DEFAULT_EXAM = '2027-10-17T13:00:00+09:00';
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const formatter = new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'});
@@ -41,7 +42,6 @@ export function countdown(target, now = Date.now()) {
   const sec=Math.max(0,Math.floor((at-now)/1000));
   return [Math.floor(sec/86400),Math.floor(sec%86400/3600),Math.floor(sec%3600/60),sec%60];
 }
-export const heatLevel = n => n < 1 ? 0 : n === 1 ? 1 : n === 2 ? 2 : n < 5 ? 3 : 4;
 export function calendarCells(year) {
   const start=toDay(`${year}-01-01`),stop=toDay(`${year+1}-01-01`);
   const offset=new Date(start*DAY_MS).getUTCDay();
@@ -80,6 +80,20 @@ export function formatStudyDuration(milliseconds) {
   const whole = Math.max(0, Math.floor(milliseconds / 1000));
   return [Math.floor(whole / 3600), Math.floor(whole / 60) % 60, whole % 60]
     .map(part => String(part).padStart(2, '0')).join(':');
+}
+
+export function extendDailyStudyTime(dailyMs, from, now) {
+  if (from >= now) return dailyMs;
+  const durations = new Map(dailyMs);
+  const japanOffset = 9 * 60 * 60 * 1000;
+  for (let cursor = from; cursor < now;) {
+    const day = Math.floor((cursor + japanOffset) / DAY_MS);
+    const date = dateFromDay(day);
+    const end = Math.min(now, (day + 1) * DAY_MS - japanOffset);
+    durations.set(date, (durations.get(date) ?? 0) + end - cursor);
+    cursor = end;
+  }
+  return durations;
 }
 
 export function studyPeriodStarts(timestamp) {
