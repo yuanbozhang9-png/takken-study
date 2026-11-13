@@ -3,6 +3,7 @@ import {DEFAULT_EXAM,jpDate,toDay,dateFromDay,lifeModel,countdown,calendarCells,
 const $=id=>document.getElementById(id);
 let cloud=null,user=null,profile=null,questions=[],records=[],current=null,selected=null,done=false,busy=false,authBusy=false,pending=null,authEpoch=0,refreshTask=null,restoreBusy=false;
 let rememberedDay=jpDate(),lastRefresh=0;
+let ageCountdownTarget = null;
 let timerState = null, timerTask = null, timerReady = false, timerChanging = false;
 let correctionRecords = null, correctionLoad = null, correctionDraftId = null;
 const PENDING_KEY='takken-pending-v2';
@@ -17,9 +18,17 @@ function errorText(err){
   if(code==='PGRST202'||code==='42P01')return '数据库初始化或函数尚未部署';
   return String(err?.message||'网络或服务暂时不可用').slice(0,240);
 }
+function countdownText(target, now) {
+  const [days, hours, minutes, seconds] = countdown(target, now);
+  const twoDigits = value => String(value).padStart(2, '0');
+  return `${days}天 ${twoDigits(hours)}时 ${twoDigits(minutes)}分 ${twoDigits(seconds)}秒`;
+}
 function showClock(){
-  const target=profile?.exam_at||DEFAULT_EXAM,parts=countdown(target);
-  $('clock').textContent=`${parts[0]}天 ${String(parts[1]).padStart(2,'0')}时 ${String(parts[2]).padStart(2,'0')}分 ${String(parts[3]).padStart(2,'0')}秒`;
+  const now = Date.now();
+  const target = profile?.exam_at || DEFAULT_EXAM;
+  $('clock').textContent = countdownText(target, now);
+  $('ageCountdown').hidden = !ageCountdownTarget;
+  $('ageClock').textContent = ageCountdownTarget ? countdownText(ageCountdownTarget, now) : '';
   const local=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',dateStyle:'long',timeStyle:'short'}).format(new Date(target));
   $('examLabel').textContent=local+'（日本时间；个人暂定日期，非官方确认日期）';
 }
@@ -294,6 +303,7 @@ async function saveStudyCorrection(event) {
   }
 }
 function renderLife(){
+  ageCountdownTarget = null;
   $('life').replaceChildren();$('pastStat').textContent='';$('futureStat').textContent='';
   if(!profile?.birthday){$('lifeLock').hidden=false;return;}
   try{
@@ -312,6 +322,7 @@ function renderLife(){
       outer.append(label,cells);frag.append(outer);
     }
     $('life').append(frag);
+    ageCountdownTarget = dateFromDay(model.rows.at(-1).end) + 'T00:00:00+09:00';
   }catch(e){$('lifeLock').hidden=false;$('lifeLock').textContent='出生日期无效，请重新设置。';}
 }
 function renderHeat(){
