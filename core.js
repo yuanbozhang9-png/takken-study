@@ -14,10 +14,18 @@ export function toDay(s) {
 }
 export const dateFromDay = n => new Date(n*DAY_MS).toISOString().slice(0,10);
 function birthdayAt(birthday, year) {
-  // 闰日出生者在非闰年的年龄边界按 2/28 计算；本人的 9/4 不受此约定影响。
+  // 年龄时间轴和生日倒计时统一在非闰年使用 2 月 28 日。
   let s = `${year}-${birthday.slice(5)}`;
   try {toDay(s);} catch {s = `${year}-02-28`;}
   return toDay(s);
+}
+export function nextBirthday(birthday, now = Date.now()) {
+  toDay(birthday);
+  const year = Number(jpDate(new Date(now)).slice(0, 4));
+  const thisYear = dateFromDay(birthdayAt(birthday, year)) + 'T00:00:00+09:00';
+  return now < Date.parse(thisYear)
+    ? thisYear
+    : dateFromDay(birthdayAt(birthday, year + 1)) + 'T00:00:00+09:00';
 }
 export function lifeModel(birthday, today = jpDate()) {
   const first = toDay(birthday), year = Number(birthday.slice(0,4));

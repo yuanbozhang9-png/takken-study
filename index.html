@@ -2,7 +2,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; frame-src https://www.retio.or.jp; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
-<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=age-countdown"><script type="module" src="./app.js?v=age-countdown"></script>
+<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=birthday-countdown"><script type="module" src="./app.js?v=birthday-countdown"></script>
 </head><body><main>
 <div class="top-clocks">
 <section class="countdown-stack">
@@ -11,9 +11,9 @@
     <div id="clock" class="digits" role="timer" aria-labelledby="examClockHeading">--- : -- : -- : --</div>
     <div class="small" id="examLabel"></div>
   </div>
-  <div id="ageCountdown" hidden>
-    <h2 id="ageClockHeading">距 30 岁</h2>
-    <div id="ageClock" class="digits" role="timer" aria-labelledby="ageClockHeading"></div>
+  <div id="birthdayCountdown" hidden>
+    <h2 id="birthdayClockHeading">距下次生日</h2>
+    <div id="birthdayClock" class="digits birthday-digits" role="timer" aria-labelledby="birthdayClockHeading"></div>
   </div>
 </section>
 <section id="studyTimer" aria-labelledby="studyTimerHeading" hidden>

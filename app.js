@@ -1,9 +1,9 @@
 import {CONFIG} from './config.js';
-import {DEFAULT_EXAM,jpDate,toDay,dateFromDay,lifeModel,countdown,calendarCells,heatLevel,statistics,validateBackup,validateStudySessions,formatStudyDuration,studyPeriodStarts,randomQuestion,UUID,newId} from './core.js?v=study-timer';
+import {DEFAULT_EXAM,jpDate,toDay,dateFromDay,lifeModel,nextBirthday,countdown,calendarCells,heatLevel,statistics,validateBackup,validateStudySessions,formatStudyDuration,studyPeriodStarts,randomQuestion,UUID,newId} from './core.js?v=birthday-countdown';
 const $=id=>document.getElementById(id);
 let cloud=null,user=null,profile=null,questions=[],records=[],current=null,selected=null,done=false,busy=false,authBusy=false,pending=null,authEpoch=0,refreshTask=null,restoreBusy=false;
 let rememberedDay=jpDate(),lastRefresh=0;
-let ageCountdownTarget = null;
+let birthdayTarget = null;
 let timerState = null, timerTask = null, timerReady = false, timerChanging = false;
 let correctionRecords = null, correctionLoad = null, correctionDraftId = null;
 const PENDING_KEY='takken-pending-v2';
@@ -27,8 +27,11 @@ function showClock(){
   const now = Date.now();
   const target = profile?.exam_at || DEFAULT_EXAM;
   $('clock').textContent = countdownText(target, now);
-  $('ageCountdown').hidden = !ageCountdownTarget;
-  $('ageClock').textContent = ageCountdownTarget ? countdownText(ageCountdownTarget, now) : '';
+  if (birthdayTarget && now >= Date.parse(birthdayTarget)) {
+    birthdayTarget = nextBirthday(profile.birthday, now);
+  }
+  $('birthdayCountdown').hidden = !birthdayTarget;
+  $('birthdayClock').textContent = birthdayTarget ? countdownText(birthdayTarget, now) : '';
   const local=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',dateStyle:'long',timeStyle:'short'}).format(new Date(target));
   $('examLabel').textContent=local+'（日本时间；个人暂定日期，非官方确认日期）';
 }
@@ -303,7 +306,7 @@ async function saveStudyCorrection(event) {
   }
 }
 function renderLife(){
-  ageCountdownTarget = null;
+  birthdayTarget = null;
   $('life').replaceChildren();$('pastStat').textContent='';$('futureStat').textContent='';
   if(!profile?.birthday){$('lifeLock').hidden=false;return;}
   try{
@@ -322,7 +325,7 @@ function renderLife(){
       outer.append(label,cells);frag.append(outer);
     }
     $('life').append(frag);
-    ageCountdownTarget = dateFromDay(model.rows.at(-1).end) + 'T00:00:00+09:00';
+    birthdayTarget = nextBirthday(profile.birthday);
   }catch(e){$('lifeLock').hidden=false;$('lifeLock').textContent='出生日期无效，请重新设置。';}
 }
 function renderHeat(){
