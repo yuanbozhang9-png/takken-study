@@ -2,18 +2,24 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; frame-src https://www.retio.or.jp; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
-<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=timed-checkin"><script type="module" src="./app.js?v=daily-study-total"></script>
+<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=countdown-lines"><script type="module" src="./app.js?v=countdown-lines"></script>
 </head><body><main>
 <div class="top-clocks">
 <section class="countdown-stack">
   <div>
     <h2 id="examClockHeading">宅建試験まで</h2>
-    <div id="clock" class="digits" role="timer" aria-labelledby="examClockHeading">--- : -- : -- : --</div>
+    <div id="clock" class="digits countdown-clock" role="timer" aria-labelledby="examClockHeading">
+      <span class="countdown-days"><span class="countdown-day-value">—</span><span class="countdown-day-unit">天</span></span>
+      <span class="countdown-time">--时 --分 --秒</span>
+    </div>
     <div class="small" id="examLabel"></div>
   </div>
   <div id="birthdayCountdown" hidden>
     <h2 id="birthdayClockHeading">距下次生日</h2>
-    <div id="birthdayClock" class="digits birthday-digits" role="timer" aria-labelledby="birthdayClockHeading"></div>
+    <div id="birthdayClock" class="digits countdown-clock birthday-digits" role="timer" aria-labelledby="birthdayClockHeading">
+      <span class="countdown-days"><span class="countdown-day-value"></span><span class="countdown-day-unit">天</span></span>
+      <span class="countdown-time"></span>
+    </div>
   </div>
 </section>
 <section id="studyTimer" aria-labelledby="studyTimerHeading" hidden>

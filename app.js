@@ -19,20 +19,29 @@ function errorText(err){
   if(code==='PGRST202'||code==='42P01')return '数据库初始化或函数尚未部署';
   return String(err?.message||'网络或服务暂时不可用').slice(0,240);
 }
-function countdownText(target, now) {
+function renderCountdown(clockId, target, now) {
+  const clock = $(clockId);
+  const dayValue = clock.querySelector('.countdown-day-value');
+  const time = clock.querySelector('.countdown-time');
+  if (!target) {
+    dayValue.textContent = '';
+    time.textContent = '';
+    return;
+  }
   const [days, hours, minutes, seconds] = countdown(target, now);
   const twoDigits = value => String(value).padStart(2, '0');
-  return `${days}天 ${twoDigits(hours)}时 ${twoDigits(minutes)}分 ${twoDigits(seconds)}秒`;
+  dayValue.textContent = String(days);
+  time.textContent = `${twoDigits(hours)}时 ${twoDigits(minutes)}分 ${twoDigits(seconds)}秒`;
 }
 function showClock(){
   const now = Date.now();
   const target = profile?.exam_at || DEFAULT_EXAM;
-  $('clock').textContent = countdownText(target, now);
+  renderCountdown('clock', target, now);
   if (birthdayTarget && now >= Date.parse(birthdayTarget)) {
     birthdayTarget = nextBirthday(profile.birthday, now);
   }
   $('birthdayCountdown').hidden = !birthdayTarget;
-  $('birthdayClock').textContent = birthdayTarget ? countdownText(birthdayTarget, now) : '';
+  renderCountdown('birthdayClock', birthdayTarget, now);
   const local=new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Tokyo',dateStyle:'long',timeStyle:'short'}).format(new Date(target));
   $('examLabel').textContent=local+'（日本时间；个人暂定日期，非官方确认日期）';
 }

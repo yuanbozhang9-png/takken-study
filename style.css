@@ -9,7 +9,13 @@
 .top-clocks>section{flex:1 1 280px;min-width:0;border-bottom:0}
 .top-clocks .digits{line-height:1.35}
 .countdown-stack{display:grid;align-content:start;gap:14px}
+.countdown-clock{display:grid;justify-items:start;gap:2px}
+.countdown-day-unit{margin-inline-start:.25em;font-size:.65em;color:#657285}
+.countdown-time{font-size:clamp(12px,2.4vw,14px);color:#657285;word-spacing:.2em;white-space:nowrap}
+#examLabel{margin-top:4px}
+#birthdayClockHeading{margin-bottom:8px}
 .countdown-stack .birthday-digits{font-size:clamp(16px,3.2vw,22px)}
+.birthday-digits .countdown-time{font-size:clamp(11px,2.2vw,13px)}
 .study-timer-line{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .study-timer-actions,.study-timer-totals{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
 .study-timer-actions .btn{min-height:44px}
