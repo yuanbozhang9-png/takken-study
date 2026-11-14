@@ -50,7 +50,7 @@ function dailyStudyTime(now) {
 
 function renderStudyTimer(refreshCalendar = false) {
   if (!timerState) {
-    for (const id of ['studyElapsed', 'studyMonth', 'studyWeek']) $(id).textContent = '—';
+    for (const id of ['studyElapsed', 'studyMonth', 'studyWeek', 'studyDay']) $(id).textContent = '—';
     $('studyCurrent').hidden = true;
     $('studyCurrent').textContent = '';
     $('studyCheckin').hidden = true;
@@ -73,7 +73,9 @@ function renderStudyTimer(refreshCalendar = false) {
 
   const daily = dailyStudyTime(now);
   const today = jpDate(new Date(now));
-  const checked = (daily.get(today) ?? 0) >= CHECKIN_MS;
+  const todayMs = daily.get(today) ?? 0;
+  $('studyDay').textContent = formatStudyDuration(todayMs);
+  const checked = todayMs >= CHECKIN_MS;
   const status = checked ? '今日已打卡' : '今日未打卡';
   $('studyCheckin').hidden = false;
   if ($('studyCheckin').textContent !== status) $('studyCheckin').textContent = status;

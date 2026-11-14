@@ -2,7 +2,7 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; frame-src https://www.retio.or.jp; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
-<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=timed-checkin"><script type="module" src="./app.js?v=timed-checkin"></script>
+<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=timed-checkin"><script type="module" src="./app.js?v=daily-study-total"></script>
 </head><body><main>
 <div class="top-clocks">
 <section class="countdown-stack">
@@ -28,7 +28,11 @@
       <button class="btn secondary" id="stopStudy" type="button" disabled>停止学习</button>
     </div>
   </div>
-  <p class="small study-timer-totals"><span>本月 <strong id="studyMonth">—</strong></span><span>本周 <strong id="studyWeek">—</strong></span></p>
+  <p class="small study-timer-totals">
+    <span>本月 <strong id="studyMonth">—</strong></span>
+    <span>本周 <strong id="studyWeek">—</strong></span>
+    <span>本日累计 <strong id="studyDay">—</strong></span>
+  </p>
   <div id="studyCurrent" class="small" hidden></div>
   <div id="studyCheckin" class="small" role="status" hidden></div>
   <div id="studyTimerStatus" class="note" role="status"></div>
