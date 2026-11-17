@@ -1,8 +1,8 @@
 <!doctype html><html lang="zh-CN"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light">
+<meta name="referrer" content="no-referrer"><meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://cdn.jsdelivr.net; frame-src https://www.retio.or.jp; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
-<title>宅建 · 时间与学习</title><link rel="stylesheet" href="./style.css?v=countdown-lines"><script type="module" src="./app.js?v=countdown-lines"></script>
+<title>宅建 · 时间与学习</title><script src="./theme.js?v=night-mode"></script><link rel="stylesheet" href="./style.css?v=night-mode"><script type="module" src="./app.js?v=countdown-lines"></script>
 </head><body><main>
 <div class="top-clocks">
 <section class="countdown-stack">
@@ -60,6 +60,11 @@
     </form>
   </details>
 </section>
+<div class="theme-controls">
+  <button class="btn secondary theme-toggle" id="themeToggle" type="button" role="switch" aria-checked="false" hidden>
+    夜间模式<span class="theme-switch" aria-hidden="true"></span>
+  </button>
+</div>
 </div>
 <section><h2>30歳までの時間</h2><div class="statline"><span id="pastStat"></span><span id="futureStat"></span></div><div id="life" class="life"></div><p id="lifeLock" class="life-lock">登录后读取私人出生日期，显示30行人生时间轴。出生日期不写入公开源码。</p><div class="legend"><span><i class="sw color-0"></i>过去</span><span><i class="sw color-1"></i>今天</span><span><i class="sw color-2"></i>未来</span></div></section>
 <div id="studyArea" hidden>
