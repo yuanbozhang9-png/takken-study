@@ -2,6 +2,8 @@
   const storageKey = 'takken-theme';
   const root = document.documentElement;
   const systemTheme = window.matchMedia?.('(prefers-color-scheme: dark)');
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const hasViewTransition = typeof document.startViewTransition === 'function';
   let preference;
   let toggle;
 
@@ -18,6 +20,7 @@
     toggle?.setAttribute('aria-checked', String(theme === 'dark'));
   }
 
+  root.classList.toggle('theme-color-fade', !hasViewTransition);
   applyTheme();
   systemTheme?.addEventListener?.('change', applyTheme);
 
@@ -28,8 +31,13 @@
     applyTheme();
     toggle.hidden = false;
     toggle.addEventListener('click', () => {
-      preference = root.dataset.theme === 'dark' ? 'light' : 'dark';
-      applyTheme();
+      const currentTheme = preference ?? root.dataset.theme;
+      preference = currentTheme === 'dark' ? 'light' : 'dark';
+      if (hasViewTransition && !reducedMotion?.matches) {
+        document.startViewTransition(applyTheme);
+      } else {
+        applyTheme();
+      }
       try {
         window.localStorage.setItem(storageKey, preference);
       } catch {

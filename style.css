@@ -136,6 +136,42 @@
   background: var(--surface);
 }
 
+::view-transition {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-group(root) {
+    animation-duration: 260ms;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-timing-function: ease-in-out;
+  }
+
+  .theme-color-fade {
+    --theme-fade: 260ms ease-in-out;
+  }
+
+  .theme-color-fade,
+  .theme-color-fade :where(
+    .top-clocks, section, h2, .small, a, label, summary, .note, .statline,
+    .countdown-time, .countdown-day-unit, .study-timer-totals strong,
+    .legend, .life-lock, .btn, .answer, .inputrow input, select,
+    input[type="date"], input[type="datetime-local"], .theme-switch
+  ) {
+    transition:
+      background-color var(--theme-fade),
+      color var(--theme-fade),
+      border-color var(--theme-fade);
+  }
+
+  .theme-color-fade .theme-switch::after {
+    transition: background-color var(--theme-fade);
+  }
+}
+
 .inputrow input {
   color: var(--control-text);
 }
