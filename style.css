@@ -142,7 +142,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
   ::view-transition-group(root) {
-    animation-duration: 260ms;
+    animation-duration: 540ms;
   }
 
   ::view-transition-old(root),
@@ -151,7 +151,7 @@
   }
 
   .theme-color-fade {
-    --theme-fade: 260ms ease-in-out;
+    --theme-fade: 540ms ease-in-out;
   }
 
   .theme-color-fade,
