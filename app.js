@@ -58,19 +58,22 @@ function dailyStudyTime(now) {
 }
 
 function renderStudyTimer(refreshCalendar = false) {
+  const average = $('studyAverage');
   if (!timerState) {
     for (const id of ['studyElapsed', 'studyMonth', 'studyWeek', 'studyDay']) $(id).textContent = '—';
+    if (average) average.textContent = '—';
     $('studyCurrent').hidden = true;
     $('studyCurrent').textContent = '';
     $('studyCheckin').hidden = true;
     $('studyCheckin').textContent = '';
     return;
   }
-  const {active, periodStarts, totalMs, monthMs, weekMs} = timerState;
+  const {active, periodStarts, totalMs, monthMs, weekMs, firstStudyDay} = timerState;
   const now = studyNow();
   const periods = studyPeriodStarts(now);
   const runningSince = start => active ? Math.max(0, now - Math.max(active.startedAt, start)) : 0;
-  $('studyElapsed').textContent = formatStudyDuration(totalMs + runningSince(0));
+  const accumulatedMs = totalMs + runningSince(0);
+  $('studyElapsed').textContent = formatStudyDuration(accumulatedMs);
   $('studyMonth').textContent = formatStudyDuration(
     (periods.month === periodStarts.month ? monthMs : 0) + runningSince(periods.month)
   );
@@ -82,6 +85,10 @@ function renderStudyTimer(refreshCalendar = false) {
 
   const daily = dailyStudyTime(now);
   const today = jpDate(new Date(now));
+  if (average) {
+    const calendarDays = toDay(today) - firstStudyDay + 1;
+    average.textContent = formatStudyDuration(accumulatedMs / calendarDays);
+  }
   const todayMs = daily.get(today) ?? 0;
   $('studyDay').textContent = formatStudyDuration(todayMs);
   const checked = todayMs >= CHECKIN_MS;
@@ -111,6 +118,11 @@ function acceptTimerState(data) {
     || (data?.active && (!UUID.test(data.active.id) || !Number.isFinite(startedAt)))) {
     throw new Error('未收到有效的云端计时状态');
   }
+  const dailyMs = new Map(Object.entries(daily));
+  let firstStudyDate = jpDate(new Date(Math.min(startedAt ?? serverNow, serverNow)));
+  for (const date of dailyMs.keys()) {
+    if (date < firstStudyDate) firstStudyDate = date;
+  }
   timerState = {
     active: data.active ? {id: data.active.id, startedAt} : null,
     serverNow,
@@ -119,7 +131,8 @@ function acceptTimerState(data) {
     totalMs: data.total_ms,
     monthMs: data.month_ms,
     weekMs: data.week_ms,
-    dailyMs: new Map(Object.entries(daily))
+    firstStudyDay: toDay(firstStudyDate),
+    dailyMs
   };
   timerReady = true;
   renderStudyTimer(true);
