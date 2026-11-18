@@ -191,10 +191,11 @@
 .countdown-stack .birthday-digits{font-size:clamp(16px,3.2vw,22px)}
 .birthday-digits .countdown-time{font-size:clamp(11px,2.2vw,13px)}
 .study-timer-line{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.study-timer-readings{display:flex;gap:20px;white-space:nowrap}
 .study-timer-actions,.study-timer-totals{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center}
 .study-timer-actions .btn{min-height:44px}
-.study-timer-totals{margin:12px 0 0;font-variant-numeric:tabular-nums}
+.study-timer-totals{margin:12px 0 0;column-gap:8px;font-variant-numeric:tabular-nums}
+.study-timer-totals span{white-space:nowrap}
+.study-timer-day-totals{display:flex;column-gap:inherit}
 .study-timer-totals strong{margin-left:4px;color:var(--control-text);font-weight:600}
 #studyCurrent,#studyCheckin{margin-top:4px}
 #studyTimerStatus:empty{display:none}
